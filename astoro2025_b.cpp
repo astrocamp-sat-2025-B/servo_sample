@@ -6,14 +6,15 @@
 #include "hardware/pio.h"
 #include "hardware/uart.h"
 #include "blink.pio.h"
+#include "hardware/clocks.h"
 
 // ==== サーボ PWM設定 ====
 const uint PWM_PIN = 11;
-const uint16_t STOP_PULSE_US = 1500;
-const uint16_t CW_PULSE_US   = 1200;
-const uint16_t CCW_PULSE_US  = 1800;
-// ToDo: 50である必要性　要ロジアナ？
-const float PWM_FREQ = 50;
+const uint16_t STOP_PULSE_US = 1500; // 規定値　1500us
+const uint16_t CW_PULSE_US   = 1200; // 規定値　1500-700
+const uint16_t CCW_PULSE_US  = 1800; // 規定値　1500-2300
+#define PWM_FREQ 50;
+#define PWM_DIVIDER 100.0f
 const uint16_t WRAP_VAL = 25000 - 1; // 50Hz, 1us分解能
 
 // ==== SPI設定 ====
@@ -34,7 +35,6 @@ const uint16_t WRAP_VAL = 25000 - 1; // 50Hz, 1us分解能
 #define UART_TX_PIN 12 // 修正
 #define UART_RX_PIN 13 // 修正
 
-// ==== CYW43設定 (必要なら) ====
 #ifdef CYW43_WL_GPIO_LED_PIN
 #include "pico/cyw43_arch.h"
 #endif
@@ -57,16 +57,12 @@ uint16_t us_to_level(uint16_t us) {
 }
 
 // add section
-// Perform initialisation
 int pico_led_init(void) {
 #if defined(PICO_DEFAULT_LED_PIN)
-    // A device like Pico that uses a GPIO for the LED will define PICO_DEFAULT_LED_PIN
-    // so we can use normal GPIO functionality to turn the led on and off
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     return PICO_OK;
 #elif defined(CYW43_WL_GPIO_LED_PIN)
-    // For Pico W devices we need to initialise the driver etc
     return cyw43_arch_init();
 #endif
 }
@@ -91,8 +87,9 @@ int main() {
     gpio_set_function(PWM_PIN, GPIO_FUNC_PWM);
     uint slice_num = pwm_gpio_to_slice_num(PWM_PIN);
     uint channel = pwm_gpio_to_channel(PWM_PIN);
-    pwm_set_clkdiv(slice_num, 1); // クロック分周を1に設定
-    pwm_set_wrap(slice_num, WRAP_VAL);
+    pwm_set_clkdiv(slice_num, PWM_DIVIDER);
+    uint16_t wrap = (clock_get_hz(clk_sys) / PWM_DIVIDER) / PWM_FREQ;
+    pwm_set_wrap(slice_num, wrap);
     pwm_set_enabled(slice_num, true);
 
     // ==== SPI初期化 ====
@@ -111,11 +108,6 @@ int main() {
     gpio_pull_up(I2C_SDA);
     gpio_pull_up(I2C_SCL);
 
-    // ==== PIO LED点滅 ====
-    #ifndef LED_DELAY_MS
-    #define LED_DELAY_MS 500 // 点滅間隔を短くして確認しやすくする
-    #endif
-
     // ==== UART初期化 ====
     uart_init(UART_ID, BAUD_RATE);
     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
@@ -130,33 +122,23 @@ int main() {
         #endif
 
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-        sleep_ms(LED_DELAY_MS);
+        sleep_ms(500);
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
-        sleep_ms(LED_DELAY_MS);
+        sleep_ms(500);
 
-        // これちゃんと制御できてる？
-        printf("Rotating CW...\n");
-        uart_puts(UART_ID, " Rotating CW...\n");
-        pwm_set_chan_level(slice_num, channel, us_to_level(CW_PULSE_US));
-        sleep_ms(2000);
 
-        printf("Stopping...\n");
-        pwm_set_chan_level(slice_num, channel, us_to_level(STOP_PULSE_US));
-        sleep_ms(2000);
-
-        printf("Rotating CCW...\n");
-        pwm_set_chan_level(slice_num, channel, us_to_level(CCW_PULSE_US));
-        sleep_ms(2000);
-
-        printf("Stopping...\n");
-        pwm_set_chan_level(slice_num, channel, us_to_level(STOP_PULSE_US));
-        sleep_ms(2000);
+        for (int i = 0; i < wrap; i+=50)
+        {
+            uart_putc(UART_ID, i); 
+            uart_puts(UART_ID, "\n");
+            // 以下挙動おかしい
+            pwm_set_chan_level(slice_num, channel, i);
+            sleep_ms(100);
+            // ...
+        }
 
         // UARTからも送信
-        uart_puts(UART_ID, "Looping servo + peripherals...\n");
-
-        // デバッグ用
-        printf("Hello, world!\n");
+        uart_puts(UART_ID, "Looping servo...\n");
     }
 
     return 0;
