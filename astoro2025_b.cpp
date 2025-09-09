@@ -10,9 +10,11 @@
 // ==== サーボ PWM設定 ====
 const uint PWM_PIN = 11;
 const uint16_t STOP_PULSE_US = 1500;
-const uint16_t CW_PULSE_US   = 1800;
-const uint16_t CCW_PULSE_US  = 1200;
+const uint16_t CW_PULSE_US   = 1200;
+const uint16_t CCW_PULSE_US  = 1800;
+// ToDo: 50である必要性　要ロジアナ？
 const float PWM_FREQ = 50;
+const uint16_t WRAP_VAL = 25000 - 1; // 50Hz, 1us分解能
 
 // ==== SPI設定 ====
 #define SPI_PORT spi0
@@ -27,10 +29,19 @@ const float PWM_FREQ = 50;
 #define I2C_SCL 9
 
 // ==== UART設定 ====
-#define UART_ID uart1
+#define UART_ID uart0
 #define BAUD_RATE 115200
-#define UART_TX_PIN 4
-#define UART_RX_PIN 5
+#define UART_TX_PIN 12 // 修正
+#define UART_RX_PIN 13 // 修正
+
+// ==== CYW43設定 (必要なら) ====
+#ifdef CYW43_WL_GPIO_LED_PIN
+#include "pico/cyw43_arch.h"
+#endif
+
+#ifndef LED_DELAY_MS
+#define LED_DELAY_MS 2000
+#endif
 
 // ==== PIO Blink ====
 void blink_pin_forever(PIO pio, uint sm, uint offset, uint pin, uint freq) {
@@ -40,17 +51,48 @@ void blink_pin_forever(PIO pio, uint sm, uint offset, uint pin, uint freq) {
     pio->txf[sm] = (125000000 / (2 * freq)) - 3;
 }
 
+// ==== パルス幅をPWMレベルに変換する関数 ====
+uint16_t us_to_level(uint16_t us) {
+    return (uint16_t)((float)us / 20000.0f * (WRAP_VAL + 1));
+}
+
+// add section
+// Perform initialisation
+int pico_led_init(void) {
+#if defined(PICO_DEFAULT_LED_PIN)
+    // A device like Pico that uses a GPIO for the LED will define PICO_DEFAULT_LED_PIN
+    // so we can use normal GPIO functionality to turn the led on and off
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    return PICO_OK;
+#elif defined(CYW43_WL_GPIO_LED_PIN)
+    // For Pico W devices we need to initialise the driver etc
+    return cyw43_arch_init();
+#endif
+}
+
+// Turn the led on or off
+void pico_set_led(bool led_on) {
+#if defined(PICO_DEFAULT_LED_PIN)
+    // Just set the GPIO on or off
+    gpio_put(PICO_DEFAULT_LED_PIN, led_on);
+#elif defined(CYW43_WL_GPIO_LED_PIN)
+    // Ask the wifi "driver" to set the GPIO on or off
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
+#endif
+}
+
+
 int main() {
     stdio_init_all();
+    printf("Hello, world!\n");
 
     // ==== PWM初期化 ====
     gpio_set_function(PWM_PIN, GPIO_FUNC_PWM);
-    //以下赤線の修正
     uint slice_num = pwm_gpio_to_slice_num(PWM_PIN);
     uint channel = pwm_gpio_to_channel(PWM_PIN);
-    float div = 125000000.0f / (PWM_FREQ * 4096.0f);
-    pwm_set_clkdiv(slice_num, div);
-    pwm_set_wrap(slice_num, 4095);
+    pwm_set_clkdiv(slice_num, 1); // クロック分周を1に設定
+    pwm_set_wrap(slice_num, WRAP_VAL);
     pwm_set_enabled(slice_num, true);
 
     // ==== SPI初期化 ====
@@ -70,13 +112,9 @@ int main() {
     gpio_pull_up(I2C_SCL);
 
     // ==== PIO LED点滅 ====
-    PIO pio = pio0;
-    uint offset = pio_add_program(pio, &blink_program);
-#ifdef PICO_DEFAULT_LED_PIN
-    blink_pin_forever(pio, 0, offset, PICO_DEFAULT_LED_PIN, 3);
-#else
-    blink_pin_forever(pio, 0, offset, 6, 3);
-#endif
+    #ifndef LED_DELAY_MS
+    #define LED_DELAY_MS 500 // 点滅間隔を短くして確認しやすくする
+    #endif
 
     // ==== UART初期化 ====
     uart_init(UART_ID, BAUD_RATE);
@@ -86,21 +124,32 @@ int main() {
 
     // ==== メインループ ====
     while (true) {
-        // サーボを順番に回す
+
+        #ifdef CYW43_WL_GPIO_LED_PIN
+        cyw43_arch_init();
+        #endif
+
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+        sleep_ms(LED_DELAY_MS);
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+        sleep_ms(LED_DELAY_MS);
+
+        // これちゃんと制御できてる？
         printf("Rotating CW...\n");
-        pwm_set_chan_level(slice_num, channel, (uint16_t)(4095.0f * (CW_PULSE_US / 20000.0f)));
+        uart_puts(UART_ID, " Rotating CW...\n");
+        pwm_set_chan_level(slice_num, channel, us_to_level(CW_PULSE_US));
         sleep_ms(2000);
 
         printf("Stopping...\n");
-        pwm_set_chan_level(slice_num, channel, (uint16_t)(4095.0f * (STOP_PULSE_US / 20000.0f)));
+        pwm_set_chan_level(slice_num, channel, us_to_level(STOP_PULSE_US));
         sleep_ms(2000);
 
         printf("Rotating CCW...\n");
-        pwm_set_chan_level(slice_num, channel, (uint16_t)(4095.0f * (CCW_PULSE_US / 20000.0f)));
+        pwm_set_chan_level(slice_num, channel, us_to_level(CCW_PULSE_US));
         sleep_ms(2000);
 
         printf("Stopping...\n");
-        pwm_set_chan_level(slice_num, channel, (uint16_t)(4095.0f * (STOP_PULSE_US / 20000.0f)));
+        pwm_set_chan_level(slice_num, channel, us_to_level(STOP_PULSE_US));
         sleep_ms(2000);
 
         // UARTからも送信

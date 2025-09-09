@@ -23,7 +23,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD pico_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -66,5 +66,8 @@ target_link_libraries(astoro2025_b
         hardware_pio
         )
 
+if (PICO_CYW43_SUPPORTED)
+    target_link_libraries(astoro2025_b pico_cyw43_arch_none)
+endif()
 pico_add_extra_outputs(astoro2025_b)
 
