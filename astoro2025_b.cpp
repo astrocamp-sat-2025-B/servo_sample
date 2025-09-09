@@ -10,9 +10,9 @@
 
 // ==== サーボ PWM設定 ====
 const uint PWM_PIN = 11;
-const uint16_t STOP_PULSE_US = 1500; // 規定値　1500us
-const uint16_t CW_PULSE_US   = 1200; // 規定値　1500-700
-const uint16_t CCW_PULSE_US  = 1800; // 規定値　1500-2300
+// const uint16_t STOP_PULSE_US = 1500; // 規定値　1500us
+// const uint16_t CW_PULSE_US   = 1200; // 規定値　1500-700
+// const uint16_t CCW_PULSE_US  = 1800; // 規定値　1500-2300
 #define PWM_FREQ 50;
 #define PWM_DIVIDER 100.0f
 const uint16_t WRAP_VAL = 25000 - 1; // 50Hz, 1us分解能
@@ -87,7 +87,7 @@ int main() {
     gpio_set_function(PWM_PIN, GPIO_FUNC_PWM);
     uint slice_num = pwm_gpio_to_slice_num(PWM_PIN);
     uint channel = pwm_gpio_to_channel(PWM_PIN);
-    pwm_set_clkdiv(slice_num, PWM_DIVIDER);
+    pwm_set_clkdiv(slice_num, PWM_DIVIDER); //ここのあたりを理解
     uint16_t wrap = (clock_get_hz(clk_sys) / PWM_DIVIDER) / PWM_FREQ;
     pwm_set_wrap(slice_num, wrap);
     pwm_set_enabled(slice_num, true);
@@ -117,29 +117,32 @@ int main() {
     // ==== メインループ ====
     while (true) {
 
-        #ifdef CYW43_WL_GPIO_LED_PIN
-        cyw43_arch_init();
-        #endif
+        uart_puts(UART_ID, "Loop!\n");
 
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-        sleep_ms(500);
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
-        sleep_ms(500);
+        uart_putc(UART_ID, wrap);
+        pwm_set_chan_level(slice_num, channel,4000);
+        sleep_ms(1000);
+        pwm_set_chan_level(slice_num, channel,1860);
+        sleep_ms(1000);
+        pwm_set_chan_level(slice_num, channel,1400);
+        sleep_ms(1000);
+        pwm_set_chan_level(slice_num, channel,1860);
+        sleep_ms(1000);
 
-
-        for (int i = 0; i < wrap; i+=50)
-        {
-            uart_putc(UART_ID, i); 
-            uart_puts(UART_ID, "\n");
-            // 以下挙動おかしい
-            pwm_set_chan_level(slice_num, channel, i);
-            sleep_ms(100);
-            // ...
-        }
+        //for (int i = 0; i < wrap; i+=200)
+        //{
+        //    uart_putc(UART_ID, i); 
+        //    uart_puts(UART_ID, "\n");
+        //    // 以下挙動おかしい
+        //    pwm_set_chan_level(slice_num, channel, i);
+        //    sleep_ms(100);
+        //    // ...
+        //}
 
         // UARTからも送信
-        uart_puts(UART_ID, "Looping servo...\n");
+        // uart_puts(UART_ID, "Looping servo...\n");
+        uart_puts(UART_ID, "Looping...\n");
     }
 
-    return 0;
+    // return 0;
 }
