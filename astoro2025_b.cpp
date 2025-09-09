@@ -13,9 +13,9 @@ const uint PWM_PIN = 11;
 // const uint16_t STOP_PULSE_US = 1500; // 規定値　1500us
 // const uint16_t CW_PULSE_US   = 1200; // 規定値　1500-700
 // const uint16_t CCW_PULSE_US  = 1800; // 規定値　1500-2300
-#define PWM_FREQ 50;
-#define PWM_DIVIDER 100.0f
-const uint16_t WRAP_VAL = 25000 - 1; // 50Hz, 1us分解能
+#define PWM_FREQ 400
+#define PWM_DIVIDER 125.0f
+#define WRAP ((clock_get_hz(clk_sys) / PWM_DIVIDER) / PWM_FREQ)
 
 // ==== SPI設定 ====
 #define SPI_PORT spi0
@@ -35,14 +35,6 @@ const uint16_t WRAP_VAL = 25000 - 1; // 50Hz, 1us分解能
 #define UART_TX_PIN 12 // 修正
 #define UART_RX_PIN 13 // 修正
 
-#ifdef CYW43_WL_GPIO_LED_PIN
-#include "pico/cyw43_arch.h"
-#endif
-
-#ifndef LED_DELAY_MS
-#define LED_DELAY_MS 2000
-#endif
-
 // ==== PIO Blink ====
 void blink_pin_forever(PIO pio, uint sm, uint offset, uint pin, uint freq) {
     blink_program_init(pio, sm, offset, pin);
@@ -53,29 +45,8 @@ void blink_pin_forever(PIO pio, uint sm, uint offset, uint pin, uint freq) {
 
 // ==== パルス幅をPWMレベルに変換する関数 ====
 uint16_t us_to_level(uint16_t us) {
-    return (uint16_t)((float)us / 20000.0f * (WRAP_VAL + 1));
-}
-
-// add section
-int pico_led_init(void) {
-#if defined(PICO_DEFAULT_LED_PIN)
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    return PICO_OK;
-#elif defined(CYW43_WL_GPIO_LED_PIN)
-    return cyw43_arch_init();
-#endif
-}
-
-// Turn the led on or off
-void pico_set_led(bool led_on) {
-#if defined(PICO_DEFAULT_LED_PIN)
-    // Just set the GPIO on or off
-    gpio_put(PICO_DEFAULT_LED_PIN, led_on);
-#elif defined(CYW43_WL_GPIO_LED_PIN)
-    // Ask the wifi "driver" to set the GPIO on or off
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
-#endif
+    const uint16_t PERIOD_US = 2500;
+    return (uint16_t)((float)us / PERIOD_US * WRAP);
 }
 
 
@@ -88,8 +59,7 @@ int main() {
     uint slice_num = pwm_gpio_to_slice_num(PWM_PIN);
     uint channel = pwm_gpio_to_channel(PWM_PIN);
     pwm_set_clkdiv(slice_num, PWM_DIVIDER); //ここのあたりを理解
-    uint16_t wrap = (clock_get_hz(clk_sys) / PWM_DIVIDER) / PWM_FREQ;
-    pwm_set_wrap(slice_num, wrap);
+    pwm_set_wrap(slice_num, WRAP);
     pwm_set_enabled(slice_num, true);
 
     // ==== SPI初期化 ====
@@ -114,35 +84,25 @@ int main() {
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
     uart_puts(UART_ID, " Hello, UART!\n");
 
+    sleep_ms(2000);
+
     // ==== メインループ ====
     while (true) {
 
         uart_puts(UART_ID, "Loop!\n");
 
-        uart_putc(UART_ID, wrap);
-        pwm_set_chan_level(slice_num, channel,4000);
+        printf("wrap=%d\n", WRAP);
+        pwm_set_chan_level(slice_num, channel,us_to_level(700));  //CW
         sleep_ms(1000);
-        pwm_set_chan_level(slice_num, channel,1860);
+        pwm_set_chan_level(slice_num, channel,us_to_level(1500)); //stop
+        sleep_ms(100);
+        pwm_set_chan_level(slice_num, channel,us_to_level(2300)); //CCW
         sleep_ms(1000);
-        pwm_set_chan_level(slice_num, channel,1400);
-        sleep_ms(1000);
-        pwm_set_chan_level(slice_num, channel,1860);
+        pwm_set_chan_level(slice_num, channel,us_to_level(1500)); //stop
         sleep_ms(1000);
 
-        //for (int i = 0; i < wrap; i+=200)
-        //{
-        //    uart_putc(UART_ID, i); 
-        //    uart_puts(UART_ID, "\n");
-        //    // 以下挙動おかしい
-        //    pwm_set_chan_level(slice_num, channel, i);
-        //    sleep_ms(100);
-        //    // ...
-        //}
-
-        // UARTからも送信
-        // uart_puts(UART_ID, "Looping servo...\n");
         uart_puts(UART_ID, "Looping...\n");
     }
 
-    // return 0;
+    return 0;
 }

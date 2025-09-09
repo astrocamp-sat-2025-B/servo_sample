@@ -44,8 +44,8 @@ pico_set_program_version(astoro2025_b "0.1")
 pico_generate_pio_header(astoro2025_b ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(astoro2025_b 0)
-pico_enable_stdio_usb(astoro2025_b 1)
+pico_enable_stdio_uart(astoro2025_b 1)
+pico_enable_stdio_usb(astoro2025_b 0)
 
 # Add the standard library to the build
 target_link_libraries(astoro2025_b
