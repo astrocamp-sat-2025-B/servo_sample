@@ -5,7 +5,6 @@
 #include "hardware/i2c.h"
 #include "hardware/pio.h"
 #include "hardware/uart.h"
-#include "blink.pio.h"
 #include "hardware/clocks.h"
 
 // ==== サーボ PWM設定 ====
@@ -34,14 +33,6 @@ const uint PWM_PIN = 11;
 #define BAUD_RATE 115200
 #define UART_TX_PIN 12 // 修正
 #define UART_RX_PIN 13 // 修正
-
-// ==== PIO Blink ====
-void blink_pin_forever(PIO pio, uint sm, uint offset, uint pin, uint freq) {
-    blink_program_init(pio, sm, offset, pin);
-    pio_sm_set_enabled(pio, sm, true);
-    printf("Blinking pin %d at %d Hz\n", pin, freq);
-    pio->txf[sm] = (125000000 / (2 * freq)) - 3;
-}
 
 // ==== パルス幅をPWMレベルに変換する関数 ====
 uint16_t us_to_level(uint16_t us) {
